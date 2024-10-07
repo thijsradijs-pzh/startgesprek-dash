@@ -1,0 +1,5 @@
+dash==2.x.x
+dash-bootstrap-components==1.x.x
+dash-deck==0.x.x
+pandas==x.x.x
+pydeck==0.x.x
