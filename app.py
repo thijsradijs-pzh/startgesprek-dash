@@ -24,11 +24,26 @@ VIEW_STATE = {
     'zoom': 8
 }
 
-# Initialize the app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+# Initialize the app with DARKLY theme
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app.title = "Geschiktheidsanalyse voor Gezamenlijke Wasplaatsen"
 server = app.server  # For deployment purposes
 
-# Helper function to list and load specified CSV files
+# Helper functions
+
+# Load GeoDataFrame from shapefile or GeoJSON
+def load_gdf(gdf_path):
+    """Loads a GeoDataFrame from a shapefile or GeoJSON."""
+    gdf = gpd.read_file(gdf_path)
+    if 'hex9' not in gdf.columns:
+        print("The GeoJSON must contain a 'hex9' column.")
+        return None
+    gdf = gdf.set_index('hex9')
+    # Ensure the GeoDataFrame is in WGS84 CRS
+    gdf = gdf.to_crs(epsg=4326)
+    return gdf
+
+# Load selected CSVs
 def load_selected_csvs(folder_path, selected_csvs, all_hexagons):
     """Loads specified CSV files from the folder."""
     dataframes = {}
@@ -44,6 +59,7 @@ def load_selected_csvs(folder_path, selected_csvs, all_hexagons):
                 if 'value' not in df.columns:
                     print(f"'value' column not found in {file_name}")
                     continue
+                df['hex9'] = df['hex9'].astype(str)
                 df = df.set_index('hex9')
                 # Reindex to include all hexagons, fill missing values with zero
                 df = df.reindex(all_hexagons, fill_value=0)
@@ -52,18 +68,7 @@ def load_selected_csvs(folder_path, selected_csvs, all_hexagons):
             print(f"Error loading {file_name}: {e}")
     return dataframes
 
-# Load GeoDataFrame from shapefile
-def load_gdf(gdf_path):
-    """Loads a GeoDataFrame from a shapefile."""
-    gdf = gpd.read_file(gdf_path)
-    if 'hex9' not in gdf.columns:
-        print("The shapefile must contain a 'hex9' column.")
-        return None
-    gdf = gdf.set_index('hex9')
-    # Ensure the GeoDataFrame is in WGS84 CRS
-    gdf = gdf.to_crs(epsg=4326)
-    return gdf
-
+# Apply color mapping
 def apply_color_mapping(df, value_column, colormap):
     """Applies a color map to a specified column of a DataFrame."""
     norm = plt.Normalize(vmin=df[value_column].min(), vmax=df[value_column].max())
@@ -72,7 +77,7 @@ def apply_color_mapping(df, value_column, colormap):
         lambda x: [int(c * 255) for c in colormap_func(norm(x))[:3]]
     )  # Get RGB values
 
-# Fuzzify input variables with "close" and "far", returning each fuzzified layer individually
+# Fuzzify each layer
 def fuzzify_each_layer(df_list, fuzz_type='close', colormap_name='magma'):
     """Fuzzifies each selected criterion separately and returns a list of fuzzified DataFrames."""
     fuzzified_dataframes = []
@@ -84,13 +89,13 @@ def fuzzify_each_layer(df_list, fuzz_type='close', colormap_name='magma'):
         range_diff = df_array.max() - df_array.min()
         if range_diff == 0:
             # Assign constant fuzzified value
-            print(f"Zero range in data for layer {df.name}. Assigning constant fuzzified value.")
+            print(f"Zero range in data for layer. Assigning constant fuzzified value.")
             fuzzified_array = np.ones_like(df_array)
         else:
             # Apply fuzzification depending on the fuzz_type
             if fuzz_type == "close":
                 fuzzified_array = np.maximum(0, (df_array - df_array.min()) / range_diff)
-            else:  # fuzz_type == "far"
+            else:
                 fuzzified_array = np.maximum(0, 1 - (df_array - df_array.min()) / range_diff)
         
         # Create a new DataFrame for the fuzzified result
@@ -105,7 +110,7 @@ def fuzzify_each_layer(df_list, fuzz_type='close', colormap_name='magma'):
     
     return fuzzified_dataframes
 
-# Stack the individual fuzzified layers into a single DataFrame
+# Stack fuzzified layers
 def stack_fuzzified_layers(fuzzified_dataframes, suffix=''):
     """Stacks multiple fuzzified DataFrames by joining them on 'hex9' index."""
     # Start with the first DataFrame in the list
@@ -124,7 +129,7 @@ def stack_fuzzified_layers(fuzzified_dataframes, suffix=''):
 
     return stacked_df
 
-# Spatial suitability analysis on the stacked DataFrame
+# Perform spatial analysis on the stacked DataFrame
 def perform_spatial_analysis_on_stack(stacked_df, idx, w, g, seed=42):
     """Performs spatial suitability analysis on the stacked DataFrame with multiple fuzzified layers."""
     # Drop rows with NaN values and ensure alignment with the spatial index
@@ -173,17 +178,25 @@ def clean_dataset_name(name):
     return ' '.join(word.capitalize() for word in name.replace('_', ' ').split())
 
 # Load data
+
+# Load the GeoDataFrame
 idx = load_gdf('./app_data/h3_9_zh_delta.geojson')
 if idx is None:
     raise Exception("Failed to load GeoDataFrame")
 all_hexagons = idx.index.tolist()
 
+# Convert 'hex9' to string
+idx.index = idx.index.astype(str)
+
+# List of CSV files to load
 selected_csvs = [
     'natuur_zh_delta',
     'water_zh_delta',
-    'akkerboeren_zh_delta', 
+    'akkerboeren_zh_delta',
     'Stad'
 ]
+
+# Load CSV dataframes
 dataframes = load_selected_csvs(CSV_FOLDER_PATH, selected_csvs, all_hexagons)
 
 # Initialize weights and graph
@@ -204,116 +217,210 @@ idx = idx.to_crs(epsg=4326)
 
 # Prepare GeoJSON for mapping
 idx_reset = idx.reset_index()
+# Ensure 'hex9' is included in properties as string
+idx_reset['hex9'] = idx_reset['hex9'].astype(str)
 idx_json = json.loads(idx_reset.to_json())
 
 # Layout
-app.layout = html.Div([
-    dbc.Container([
-        html.H1("Geschiktheidsanalyse voor Gezamenlijke wasplaatsen in de Zuid-Hollandse Delta"),
-        dcc.Markdown("""
-Welkom bij de **Geschiktheidsanalyse voor Gezamenlijke wasplaatsen in de Zuid-Hollandse Delta**! Met deze tool kun je locaties vinden die het meest geschikt zijn voor nieuwe bouwprojecten, gebaseerd op verschillende criteria.
-
-### Hoe werkt het?
-
-1. **Kies je criteria**:  
-   Gebruik de zijbalk om te selecteren op welke kenmerken je **dichtbij** of **ver weg** wilt zijn.
-
-2. **Voer een analyse uit**:  
-   Klik op **"Bouw Geschiktheidskaart"** om een kaart te maken met gebieden die aan je gekozen criteria voldoen.
-
-3. **Bekijk en sla resultaten op**:  
-   De resultaten worden op de kaart getoond. Ben je tevreden? Sla je selectie op en ga verder naar **Fase 2** voor meer analyses.
-
-Veel succes met je analyse!
-"""),
-        html.Hr(),
-        html.H2("Dataset Visualisaties"),
-        html.Label("Selecteer een dataset:"),
-        dcc.Dropdown(
-            id='dataset-dropdown',
-            options=[{'label': name, 'value': name} for name in clean_dataset_names],
-            value=clean_dataset_names[0],  # Default to the first dataset
-            clearable=False
-        ),
-        dcc.Graph(id='dataset-visualization-map'),
-        html.Hr(),
-        dbc.Row([
-            dbc.Col([
-                html.H3("Selecteer Criteria voor Geschiktheidsanalyse"),
-                html.Label("Dichtbij"),
-                dcc.Checklist(
-                    id='selected-close',
-                    options=[{'label': name, 'value': name} for name in clean_dataset_names],
-                    value=[],
-                    labelStyle={'display': 'block'}
-                ),
-                html.Label("Ver weg van"),
-                dcc.Checklist(
-                    id='selected-far',
-                    options=[{'label': name, 'value': name} for name in clean_dataset_names],
-                    value=[],
-                    labelStyle={'display': 'block'}
-                ),
-                html.Br(),
-                html.Button("Bouw Geschiktheidskaart", id='submit-button', n_clicks=0, className='btn btn-primary'),
-                html.Br(), html.Br(),
-                html.Div(id='save-results-div'),
-            ], md=3),
-            dbc.Col([
-                dcc.Loading(
-                    id="loading-1",
-                    type="default",
-                    children=[
-                        html.Div(id='analysis-message'),  # Added to display messages
-                        dcc.Graph(id='suitability-map'),
+app.layout = dbc.Container(
+    [
+        dbc.Row(
+            [
+                # Column for user controls
+                dbc.Col(
+                    [
+                        html.H2("Geschiktheidsanalyse voor Gezamenlijke Wasplaatsen"),
+                        html.P(
+                            "Selecteer je criteria en bekijk de resultaten op de kaart."
+                        ),
+                        html.Hr(),
+                        html.H3("Dataset Visualisaties"),
+                        html.Label("Selecteer een dataset:"),
+                        dcc.Dropdown(
+                            id='dataset-dropdown',
+                            options=[{'label': name, 'value': name} for name in clean_dataset_names],
+                            value=clean_dataset_names[0],  # Default to the first dataset
+                            clearable=False,
+                            style={'color': '#000000'}  # Ensure text inside dropdown is visible
+                        ),
+                        html.Hr(),
+                        html.H3("Selecteer Criteria voor Geschiktheidsanalyse"),
+                        html.Label("Dichtbij"),
+                        dcc.Checklist(
+                            id='selected-close',
+                            options=[{'label': name, 'value': name} for name in clean_dataset_names],
+                            value=[],
+                            labelStyle={'display': 'block'},
+                            inputStyle={"margin-right": "5px"},
+                            style={'color': '#ffffff'}
+                        ),
+                        html.Label("Ver weg van"),
+                        dcc.Checklist(
+                            id='selected-far',
+                            options=[{'label': name, 'value': name} for name in clean_dataset_names],
+                            value=[],
+                            labelStyle={'display': 'block'},
+                            inputStyle={"margin-right": "5px"},
+                            style={'color': '#ffffff'}
+                        ),
                         html.Br(),
-                        html.Label("Selecteer percentiel voor geschiktheid (fuzzy sum drempel):"),
+                        html.Button("Bouw Geschiktheidskaart", id='submit-button', n_clicks=0, className='btn btn-primary'),
+                        html.Br(), html.Br(),
+                        html.Div(id='analysis-message'),  # Added to display messages
+                        html.P("Selecteer percentiel voor geschiktheid (fuzzy sum drempel):"),
                         dcc.Slider(
                             id='percentile-slider',
                             min=0,
                             max=100,
                             step=0.5,
                             value=90,
-                            marks={i: f'{i}%' for i in range(0, 101, 10)}
+                            marks={i: f'{i}%' for i in range(0, 101, 10)},
+                            tooltip={'always_visible': False, 'placement': 'bottom'},
                         ),
                         html.Br(),
                         html.Div(id='top-10-table'),
-                    ]
+                    ],
+                    md=3,  # Adjusted column width
+                    className="bg-dark text-white p-4",
                 ),
-            ], md=9),
-        ])
-    ], fluid=True),
-    dcc.Store(id='analysis-results')
-])
+                # Column for app graphs and plots
+                dbc.Col(
+                    [
+                        dcc.Loading(
+                            id="loading-1",
+                            type="default",
+                            children=[
+                                dcc.Graph(id='main-map', style={'height': '100vh'}),
+                            ]
+                        ),
+                    ],
+                    md=9,  # Adjusted column width
+                    className="p-0",  # Remove padding to maximize map size
+                ),
+            ],
+            className="g-0",  # Remove gutters between columns
+        ),
+        # Hidden div inside the app that stores the intermediate value
+        dcc.Store(id='analysis-results'),
+    ],
+    fluid=True,
+    className="dbc"
+)
 
 # Callbacks
 @app.callback(
-    Output('dataset-visualization-map', 'figure'),
-    Input('dataset-dropdown', 'value')
+    Output('main-map', 'figure'),
+    Output('top-10-table', 'children'),
+    Input('dataset-dropdown', 'value'),
+    Input('analysis-results', 'data'),
+    Input('percentile-slider', 'value'),
 )
-def update_dataset_visualization(selected_dataset):
-    if selected_dataset is None:
-        return dash.no_update
-    # Map the clean name back to the dataset name
-    dataset_name = clean_names_map[selected_dataset]
-    df = dataframes[dataset_name]
-    merged_df = df.reset_index()
-    # Create the figure
-    fig = px.choropleth_mapbox(
-        merged_df,
-        geojson=idx_json,
-        locations='hex9',
-        color='value',
-        color_continuous_scale=COLORMAP,
-        mapbox_style="carto-positron",
-        zoom=VIEW_STATE['zoom'],
-        center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
-        opacity=0.5,
-        labels={'value': selected_dataset},
-        featureidkey='properties.hex9'  # Adjusted to match 'properties.hex9'
-    )
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-    return fig
+def update_main_map(selected_dataset, analysis_results, percentile):
+    if analysis_results is None:
+        # Display the selected dataset
+        if selected_dataset is None:
+            return dash.no_update, None
+        # Map the clean name back to the dataset name
+        dataset_name = clean_names_map[selected_dataset]
+        df = dataframes[dataset_name].reset_index()
+        df['hex9'] = df['hex9'].astype(str)
+        merged_df = df.copy()
+        # Create the figure
+        fig = px.choropleth_mapbox(
+            merged_df,
+            geojson=idx_json,
+            locations='hex9',
+            color='value',
+            color_continuous_scale=COLORMAP,
+            opacity=0.7,  # Adjusted opacity for better visibility
+            labels={'value': selected_dataset},
+            featureidkey='properties.hex9',
+            mapbox_style='carto-darkmatter',
+            zoom=VIEW_STATE['zoom'],
+            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
+        )
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+        return fig, None
+    else:
+        # Load the data with index preserved
+        all_loi = pd.read_json(analysis_results['all_loi'], orient='split')
+        stacked_df = pd.read_json(analysis_results['stacked_df'], orient='split')
+        if all_loi.empty:
+            return dash.no_update, dash.no_update
+        # Apply percentile threshold
+        fuzzy_sum_threshold = all_loi['fuzzy_sum'].quantile(percentile / 100.0)
+        most_relevant_locations = all_loi[all_loi['fuzzy_sum'] >= fuzzy_sum_threshold]
+        # Merge with geometries
+        idx_reset = idx.reset_index()
+        merged_df = stacked_df.merge(idx_reset[['hex9', 'geometry']], on='hex9', how='left')
+        merged_df = merged_df.dropna(subset=['geometry'])
+        # Create the map
+        fig = px.choropleth_mapbox(
+            merged_df,
+            geojson=idx_json,
+            locations='hex9',
+            color='fuzzy_sum',
+            color_continuous_scale='Viridis',
+            opacity=0.7,
+            labels={'fuzzy_sum': 'Geschiktheid'},
+            featureidkey='properties.hex9',
+            mapbox_style='carto-darkmatter',
+            zoom=VIEW_STATE['zoom'],
+            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
+        )
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+        # Overlay the most relevant locations
+        if not most_relevant_locations.empty:
+            relevant_idx = idx.loc[most_relevant_locations.index]
+            centroids = relevant_idx.centroid
+            centroids_df = pd.DataFrame({
+                'hex9': centroids.index,
+                'lat': centroids.y,
+                'lon': centroids.x,
+                'fuzzy_sum': most_relevant_locations['fuzzy_sum']
+            })
+            # Add scatter trace
+            scatter = px.scatter_mapbox(
+                centroids_df,
+                lat='lat',
+                lon='lon',
+                hover_name='hex9',
+                hover_data=['fuzzy_sum'],
+                color_discrete_sequence=['red'],
+            )
+            scatter.update_traces(marker=dict(size=8))
+            fig.add_trace(scatter.data[0])
+        else:
+            print("No significant locations found after applying filters.")
+            # Optionally, provide feedback to the user
+            fig.add_annotation(
+                text="Geen significante locaties gevonden na toepassing van filters.",
+                showarrow=False,
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                font=dict(size=16, color="red")
+            )
+        # Create the table
+        if not most_relevant_locations.empty:
+            top_10 = most_relevant_locations.reset_index().head(10)
+            # Rename 'index' column to 'hex9' if necessary
+            if 'index' in top_10.columns:
+                top_10.rename(columns={'index': 'hex9'}, inplace=True)
+            fuzzy_columns = [col for col in top_10.columns if col.startswith('fuzzy_') and col != 'fuzzy_sum']
+            columns_to_display = ['hex9'] + fuzzy_columns + ['fuzzy_sum']
+            table = dash_table.DataTable(
+                columns=[{"name": i, "id": i} for i in columns_to_display],
+                data=top_10[columns_to_display].to_dict('records'),
+                style_table={'overflowX': 'auto'},
+                page_size=10,
+                style_header={'backgroundColor': 'rgb(30, 30, 30)', 'color': 'white'},
+                style_cell={'backgroundColor': 'rgb(50, 50, 50)', 'color': 'white'},
+            )
+            return fig, table
+        else:
+            return fig, html.Div("Geen locaties voldoen aan de huidige filters.", style={'color': 'red'})
 
 @app.callback(
     Output('analysis-results', 'data'),
@@ -371,100 +478,6 @@ def perform_analysis(n_clicks, selected_close, selected_far):
     except Exception as e:
         print(f"Er is een fout opgetreden tijdens de analyse: {e}")
         return None, html.Div(f"Er is een fout opgetreden tijdens de analyse: {e}", style={'color': 'red'})
-
-@app.callback(
-    Output('suitability-map', 'figure'),
-    Output('top-10-table', 'children'),
-    Input('analysis-results', 'data'),
-    Input('percentile-slider', 'value'),
-)
-def update_suitability_map(analysis_results, percentile):
-    if analysis_results is None:
-        # Return an empty figure and a message
-        fig = px.choropleth_mapbox(
-            mapbox_style="carto-positron",
-            zoom=VIEW_STATE['zoom'],
-            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
-        )
-        return fig, html.Div("Geen resultaten om weer te geven.", style={'color': 'red'})
-    # Load the data with index preserved
-    all_loi = pd.read_json(analysis_results['all_loi'], orient='split')
-    stacked_df = pd.read_json(analysis_results['stacked_df'], orient='split')
-    if all_loi.empty:
-        return dash.no_update, dash.no_update
-    # Apply percentile threshold
-    fuzzy_sum_threshold = all_loi['fuzzy_sum'].quantile(percentile / 100.0)
-    most_relevant_locations = all_loi[all_loi['fuzzy_sum'] >= fuzzy_sum_threshold]
-    # Merge with geometries
-    idx_reset = idx.reset_index()
-    merged_df = stacked_df.merge(idx_reset[['hex9', 'geometry']], on='hex9', how='left')
-    merged_df = merged_df.dropna(subset=['geometry'])
-    # Create the map
-    fig = px.choropleth_mapbox(
-        merged_df,
-        geojson=idx_json,
-        locations='hex9',
-        color='fuzzy_sum',
-        color_continuous_scale='Viridis',
-        mapbox_style="carto-positron",
-        zoom=VIEW_STATE['zoom'],
-        center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
-        opacity=0.5,
-        labels={'fuzzy_sum': 'Geschiktheid'},
-        featureidkey='properties.hex9'  # Adjusted to match 'properties.hex9'
-    )
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-    # Overlay the most relevant locations
-    if not most_relevant_locations.empty:
-        relevant_idx = idx.loc[most_relevant_locations.index]
-        centroids = relevant_idx.centroid
-        centroids_df = pd.DataFrame({
-            'hex9': centroids.index,
-            'lat': centroids.y,
-            'lon': centroids.x,
-            'fuzzy_sum': most_relevant_locations['fuzzy_sum']
-        })
-        # Use Plotly Express to create a scatter mapbox and update markers
-        scatter = px.scatter_mapbox(
-            centroids_df,
-            lat='lat',
-            lon='lon',
-            hover_name='hex9',
-            hover_data=['fuzzy_sum'],
-            color_discrete_sequence=['red'],
-            zoom=VIEW_STATE['zoom'],
-            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
-        )
-        scatter.update_traces(marker=dict(size=8))
-        fig.add_trace(scatter.data[0])
-    else:
-        print("No significant locations found after applying filters.")
-        # Optionally, provide feedback to the user
-        fig.add_annotation(
-            text="Geen significante locaties gevonden na toepassing van filters.",
-            showarrow=False,
-            xref="paper",
-            yref="paper",
-            x=0.5,
-            y=0.5,
-            font=dict(size=16, color="red")
-        )
-    # Create the table
-    if not most_relevant_locations.empty:
-        top_10 = most_relevant_locations.reset_index().head(10)
-        # Rename 'index' column to 'hex9'
-        top_10.rename(columns={'index': 'hex9'}, inplace=True)
-        fuzzy_columns = [col for col in top_10.columns if col.startswith('fuzzy_') and col != 'fuzzy_sum']
-        columns_to_display = ['hex9'] + fuzzy_columns + ['fuzzy_sum']
-        table = dash_table.DataTable(
-            columns=[{"name": i, "id": i} for i in columns_to_display],
-            data=top_10[columns_to_display].to_dict('records'),
-            style_table={'overflowX': 'auto'},
-            page_size=10,
-        )
-        return fig, table
-    else:
-        return fig, html.Div("Geen locaties voldoen aan de huidige filters.", style={'color': 'red'})
 
 # Run the app
 if __name__ == '__main__':
