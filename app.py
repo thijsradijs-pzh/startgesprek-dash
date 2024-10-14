@@ -190,9 +190,9 @@ idx.index = idx.index.astype(str)
 
 # List of CSV files to load
 selected_csvs = [
-    'natuur_zh_delta',
-    'water_zh_delta',
-    'akkerboeren_zh_delta',
+    'Natuur',
+    'Water',
+    'Akkerboeren',
     'Stad'
 ]
 
@@ -290,7 +290,7 @@ app.layout = dbc.Container(
                             id="loading-1",
                             type="default",
                             children=[
-                                dcc.Graph(id='main-map', style={'height': '100vh'}),
+                                dcc.Graph(id='main-map', style={'height': '100vh'}, config={'scrollZoom': True})
                             ]
                         ),
                     ],
@@ -339,7 +339,17 @@ def update_main_map(selected_dataset, analysis_results, percentile):
             zoom=VIEW_STATE['zoom'],
             center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
         )
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+                # Update the colorbar styling
+        fig.update_layout(
+            margin={"r":0,"t":0,"l":0,"b":0},
+            coloraxis_colorbar=dict(
+                bgcolor='black',
+                tickfont=dict(color='white'),
+                titlefont=dict(color='white'),
+            ), 
+            paper_bgcolor='black',  # Set the paper background color to black
+            plot_bgcolor='black',   # Set the plot background color to black
+        )
         return fig, None
     else:
         # Load the data with index preserved
@@ -368,7 +378,17 @@ def update_main_map(selected_dataset, analysis_results, percentile):
             zoom=VIEW_STATE['zoom'],
             center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
         )
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+                # Update the colorbar styling
+        fig.update_layout(
+            margin={"r":0,"t":0,"l":0,"b":0},
+            coloraxis_colorbar=dict(
+                bgcolor='black',
+                tickfont=dict(color='white'),
+                titlefont=dict(color='white'),
+            ),             
+            paper_bgcolor='black',  # Set the paper background color to black
+            plot_bgcolor='black',   # Set the plot background color to black
+        )
         # Overlay the most relevant locations
         if not most_relevant_locations.empty:
             relevant_idx = idx.loc[most_relevant_locations.index]
