@@ -21,12 +21,12 @@ COLORMAP = 'magma'
 VIEW_STATE = {
     'longitude': 4.390,
     'latitude': 51.891,
-    'zoom': 8
+    'zoom': 9
 }
 
 # Initialize the app with DARKLY theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
-app.title = "Geschiktheidsanalyse voor Gezamenlijke Wasplaatsen"
+app.title = "Geschiktheidsanalyse Gezamenlijke Wasplaatsen"
 server = app.server  # For deployment purposes
 
 # Helper functions
@@ -229,7 +229,7 @@ app.layout = dbc.Container(
                 # Column for user controls
                 dbc.Col(
                     [
-                        html.H2("Geschiktheidsanalyse voor Gezamenlijke Wasplaatsen"),
+                        html.H2("Geschiktheidsanalyse Gezamenlijke Wasplaatsen"),
                         html.P(
                             "Selecteer je criteria en bekijk de resultaten op de kaart."
                         ),
@@ -325,6 +325,8 @@ def update_main_map(selected_dataset, analysis_results, percentile):
         df = dataframes[dataset_name].reset_index()
         df['hex9'] = df['hex9'].astype(str)
         merged_df = df.copy()
+        # Set 0 values as transparent by adding an 'opacity' column
+        merged_df['opacity'] = merged_df['value'].apply(lambda x: 0 if x == 0 else 1)
         # Create the figure
         fig = px.choropleth_mapbox(
             merged_df,
@@ -332,21 +334,21 @@ def update_main_map(selected_dataset, analysis_results, percentile):
             locations='hex9',
             color='value',
             color_continuous_scale=COLORMAP,
-            opacity=0.7,  # Adjusted opacity for better visibility
+            opacity=merged_df['opacity'],  # Use the opacity column
             labels={'value': selected_dataset},
             featureidkey='properties.hex9',
             mapbox_style='carto-darkmatter',
             zoom=VIEW_STATE['zoom'],
-            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
+            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']}
         )
-                # Update the colorbar styling
+        # Update the colorbar styling
         fig.update_layout(
-            margin={"r":0,"t":0,"l":0,"b":0},
+            margin={"r": 0, "t": 0, "l": 0, "b": 0},
             coloraxis_colorbar=dict(
                 bgcolor='black',
                 tickfont=dict(color='white'),
                 titlefont=dict(color='white'),
-            ), 
+            ),
             paper_bgcolor='black',  # Set the paper background color to black
             plot_bgcolor='black',   # Set the plot background color to black
         )
@@ -364,6 +366,8 @@ def update_main_map(selected_dataset, analysis_results, percentile):
         idx_reset = idx.reset_index()
         merged_df = stacked_df.merge(idx_reset[['hex9', 'geometry']], on='hex9', how='left')
         merged_df = merged_df.dropna(subset=['geometry'])
+        # Set 0 values as transparent by adding an 'opacity' column
+        merged_df['opacity'] = merged_df['fuzzy_sum'].apply(lambda x: 0 if x == 0 else 1)
         # Create the map
         fig = px.choropleth_mapbox(
             merged_df,
@@ -371,21 +375,21 @@ def update_main_map(selected_dataset, analysis_results, percentile):
             locations='hex9',
             color='fuzzy_sum',
             color_continuous_scale='Viridis',
-            opacity=0.7,
+            opacity=merged_df['opacity'],  # Use the opacity column
             labels={'fuzzy_sum': 'Geschiktheid'},
             featureidkey='properties.hex9',
             mapbox_style='carto-darkmatter',
             zoom=VIEW_STATE['zoom'],
             center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']},
         )
-                # Update the colorbar styling
+        # Update the colorbar styling
         fig.update_layout(
-            margin={"r":0,"t":0,"l":0,"b":0},
+            margin={"r": 0, "t": 0, "l": 0, "b": 0},
             coloraxis_colorbar=dict(
                 bgcolor='black',
                 tickfont=dict(color='white'),
                 titlefont=dict(color='white'),
-            ),             
+            ),
             paper_bgcolor='black',  # Set the paper background color to black
             plot_bgcolor='black',   # Set the plot background color to black
         )
