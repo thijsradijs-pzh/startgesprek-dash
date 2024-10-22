@@ -68,7 +68,11 @@ app.layout = dbc.Container(
                             tooltip={'always_visible': False, 'placement': 'bottom'},
                         ),
                         html.Br(),
-                        html.Div(id='top-10-table'),
+                        dcc.Loading(
+                            id="table-loading",
+                            type="circle",
+                            children=[html.Div(id='top-10-table')],
+                        ),
                     ],
                     md=3,  # Adjusted column width
                     className="bg-dark text-white p-4",
@@ -76,16 +80,57 @@ app.layout = dbc.Container(
                 # Column for app graphs and plots
                 dbc.Col(
                     [
-                        dcc.Loading(
-                            id="loading-1",
-                            type="default",
+                        # Main loading container that covers the entire map area
+                        html.Div(
+                            className="map-container position-relative",
+                            style={'height': '100vh'},
                             children=[
-                                dcc.Graph(id='main-map', style={'height': '100vh'}, config={'scrollZoom': True})
+                                # The map
+                                dcc.Graph(
+                                    id='main-map',
+                                    style={'height': '100%'},
+                                    config={'scrollZoom': True}
+                                ),
+                                # Loading overlay
+                                html.Div(
+                                    id="map-loading-overlay",
+                                    className="loading-overlay",
+                                    children=[
+                                        dcc.Loading(
+                                            id="map-loading",
+                                            type="circle",
+                                            color="#ffffff",
+                                            children=[
+                                                html.Div(
+                                                    "Berekenen van de geschiktheidskaart...",
+                                                    style={
+                                                        'color': 'white',
+                                                        'fontSize': '18px',
+                                                        'marginTop': '20px'
+                                                    }
+                                                )
+                                            ]
+                                        )
+                                    ],
+                                    style={
+                                        'display': 'none',
+                                        'position': 'absolute',
+                                        'top': 0,
+                                        'left': 0,
+                                        'width': '100%',
+                                        'height': '100%',
+                                        'backgroundColor': 'rgba(0, 0, 0, 0.7)',
+                                        'zIndex': 1000,
+                                        'justifyContent': 'center',
+                                        'alignItems': 'center',
+                                        'flexDirection': 'column'
+                                    }
+                                ),
                             ]
                         ),
                     ],
-                    md=9,  # Adjusted column width
-                    className="p-0",  # Remove padding to maximize map size
+                    md=9,
+                    className="p-0",
                 ),
             ],
             className="g-0",  # Remove gutters between columns
