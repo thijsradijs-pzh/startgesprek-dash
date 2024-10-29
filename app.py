@@ -4,140 +4,125 @@ import dash
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 
-from data_loader import dataframes, clean_dataset_names
+from data_loader import clean_dataset_names
 
-# Initialize the app with DARKLY theme
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+# Initialize the app with BOOTSTRAP theme and suppress callback exceptions
+app = dash.Dash(
+    __name__, 
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    suppress_callback_exceptions=True
+)
 app.title = "Geschiktheidsanalyse Gezamenlijke Wasplaatsen"
-server = app.server  # For deployment purposes
+server = app.server
 
 # Layout
-app.layout = dbc.Container(
-    [
-        dbc.Row(
-            [
-                # Column for user controls
-                dbc.Col(
-                    [
-                        html.H2("Geschiktheidsanalyse Gezamenlijke Wasplaatsen"),
-                        html.P(
-                            "Selecteer je criteria en bekijk de resultaten op de kaart."
+app.layout = dbc.Container([
+    # Step 1: Introduction
+    dbc.Row(
+        dbc.Col(
+            dbc.Card([
+                dbc.CardHeader(html.H3("Stap 1: Over deze tool")),
+                dbc.CardBody([
+                    html.P(
+                        "Deze tool helpt bij het identificeren van geschikte locaties voor gezamenlijke wasplaatsen. "
+                        "U kunt verschillende criteria selecteren om de geschiktheid van locaties te bepalen:"
+                    ),
+                    html.Ul([
+                        html.Li("Selecteer criteria die dichtbij moeten zijn"),
+                        html.Li("Selecteer criteria die juist ver weg moeten zijn"),
+                        html.Li("De tool analyseert deze voorkeuren en toont de meest geschikte locaties op de kaart")
+                    ])
+                ])
+            ], className="mb-4")
+        )
+    ),
+
+    # Step 2: Criteria Selection
+    dbc.Row(
+        dbc.Col(
+            dbc.Card([
+                dbc.CardHeader(html.H3("Stap 2: Selecteer uw criteria")),
+                dbc.CardBody([
+                    dbc.Row([
+                        # Close criteria
+                        dbc.Col([
+                            html.H4("Dichtbij", className="mb-3"),
+                            dcc.Checklist(
+                                id='selected-close',
+                                options=[{'label': name, 'value': name} for name in clean_dataset_names],
+                                value=[],
+                                labelStyle={'display': 'block'},
+                                inputStyle={"margin-right": "5px"},
+                            ),
+                        ], md=6),
+                        # Far criteria
+                        dbc.Col([
+                            html.H4("Ver weg van", className="mb-3"),
+                            dcc.Checklist(
+                                id='selected-far',
+                                options=[{'label': name, 'value': name} for name in clean_dataset_names],
+                                value=[],
+                                labelStyle={'display': 'block'},
+                                inputStyle={"margin-right": "5px"},
+                            ),
+                        ], md=6),
+                    ]),
+                    html.Div(
+                        dbc.Button(
+                            "Bouw Geschiktheidskaart",
+                            id='submit-button',
+                            color="primary",
+                            className="mt-4",
+                            n_clicks=0
                         ),
-                        html.Hr(),
-                        html.H3("Dataset Visualisaties"),
-                        html.Label("Selecteer een dataset:"),
-                        dcc.Dropdown(
-                            id='dataset-dropdown',
-                            options=[{'label': name, 'value': name} for name in clean_dataset_names],
-                            value=clean_dataset_names[0],  # Default to the first dataset
-                            clearable=False,
-                            style={'color': '#000000'}  # Ensure text inside dropdown is visible
-                        ),
-                        html.Hr(),
-                        html.H3("Selecteer Criteria voor Geschiktheidsanalyse"),
-                        html.Label("Dichtbij"),
-                        dcc.Checklist(
-                            id='selected-close',
-                            options=[{'label': name, 'value': name} for name in clean_dataset_names],
-                            value=[],
-                            labelStyle={'display': 'block'},
-                            inputStyle={"margin-right": "5px"},
-                            style={'color': '#ffffff'}
-                        ),
-                        html.Label("Ver weg van"),
-                        dcc.Checklist(
-                            id='selected-far',
-                            options=[{'label': name, 'value': name} for name in clean_dataset_names],
-                            value=[],
-                            labelStyle={'display': 'block'},
-                            inputStyle={"margin-right": "5px"},
-                            style={'color': '#ffffff'}
-                        ),
-                        html.Br(),
-                        html.Button("Bouw Geschiktheidskaart", id='submit-button', n_clicks=0, className='btn btn-primary'),
-                        html.Br(), html.Br(),
-                        html.Div(id='analysis-message'),  # Added to display messages
-                        html.P("Selecteer percentiel voor geschiktheid (fuzzy sum drempel):"),
-                        dcc.Slider(
-                            id='percentile-slider',
-                            min=0,
-                            max=100,
-                            step=0.5,
-                            value=90,
-                            marks={i: f'{i}%' for i in range(0, 101, 10)},
-                            tooltip={'always_visible': False, 'placement': 'bottom'},
-                        ),
-                        html.Br(),
+                        className="text-center"
+                    ),
+                    html.Div(id='analysis-message', className="mt-3"),
+                ])
+            ], className="mb-4")
+        )
+    ),
+
+    # Map and Results (initially hidden)
+    dbc.Row(
+        dbc.Col(
+            html.Div([
+                dbc.Card([
+                    dbc.CardHeader(html.H3("Resultaten")),
+                    dbc.CardBody([
                         dcc.Loading(
-                            id="table-loading",
-                            type="circle",
-                            children=[html.Div(id='top-10-table')],
-                        ),
-                    ],
-                    md=3,  # Adjusted column width
-                    className="bg-dark text-white p-4",
-                ),
-                # Column for app graphs and plots
-                dbc.Col(
-                    [
-                        # Main loading container that covers the entire map area
-                        html.Div(
-                            className="map-container position-relative",
-                            style={'height': '100vh'},
+                            id="loading-1",
+                            type="default",
                             children=[
-                                # The map
                                 dcc.Graph(
                                     id='main-map',
-                                    style={'height': '100%'},
+                                    style={'height': '70vh'},
                                     config={'scrollZoom': True}
-                                ),
-                                # Loading overlay
-                                html.Div(
-                                    id="map-loading-overlay",
-                                    className="loading-overlay",
-                                    children=[
-                                        dcc.Loading(
-                                            id="map-loading",
-                                            type="circle",
-                                            color="#ffffff",
-                                            children=[
-                                                html.Div(
-                                                    "Berekenen van de geschiktheidskaart...",
-                                                    style={
-                                                        'color': 'white',
-                                                        'fontSize': '18px',
-                                                        'marginTop': '20px'
-                                                    }
-                                                )
-                                            ]
-                                        )
-                                    ],
-                                    style={
-                                        'display': 'none',
-                                        'position': 'absolute',
-                                        'top': 0,
-                                        'left': 0,
-                                        'width': '100%',
-                                        'height': '100%',
-                                        'backgroundColor': 'rgba(0, 0, 0, 0.7)',
-                                        'zIndex': 1000,
-                                        'justifyContent': 'center',
-                                        'alignItems': 'center',
-                                        'flexDirection': 'column'
-                                    }
-                                ),
+                                )
                             ]
                         ),
-                    ],
-                    md=9,
-                    className="p-0",
-                ),
-            ],
-            className="g-0",  # Remove gutters between columns
-        ),
-        # Hidden div inside the app that stores the intermediate value
-        dcc.Store(id='analysis-results'),
-    ],
-    fluid=True,
-    className="dbc"
-)
+                        html.Div(id='top-10-table', className="mt-4"),
+                        # Add distance slider here
+                        html.Div([
+                            html.Label("Selecteer maximale afstand (km):", className="mt-3"),
+                            dcc.Slider(
+                                id='distance-slider',
+                                min=1,
+                                max=25,
+                                step=1,
+                                value=5,
+                                marks={i: f'{i} km' for i in range(0, 26, 5)},
+                                className="mt-2 mb-4"
+                            )
+                        ], id='distance-control', className="mt-4"),
+                        html.Div(id='farm-info', className="mt-4"),
+                        dcc.Store(id='selected-row')
+                    ])
+                ])
+            ], id='results-container', style={'display': 'none'})
+        )
+    ),
+
+    # Store components
+    dcc.Store(id='analysis-results'),
+], fluid=True, className="py-4")
