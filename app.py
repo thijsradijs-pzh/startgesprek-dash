@@ -17,6 +17,27 @@ server = app.server
 
 # Layout
 app.layout = dbc.Container([
+    # Header with Logo
+    dbc.Row([
+        dbc.Col(
+            html.H2("Geschiktheidsanalyse Gezamenlijke Wasplaatsen"),
+            width={"size": 9}
+        ),
+        dbc.Col(
+            html.Img(
+                src="./assets/PZH_basislogo.png",  
+                style={
+                    'float': 'right',
+                    'height': '75px',
+                    'width': 'auto',
+                    'margin-top': '10px'
+                }
+            ),
+            width={"size": 3},
+            className="text-end"
+        )
+    ], className="mb-4"),
+
     # Step 1: Introduction
     dbc.Row(
         dbc.Col(

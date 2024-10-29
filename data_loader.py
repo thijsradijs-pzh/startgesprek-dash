@@ -5,7 +5,7 @@ import pandas as pd
 import geopandas as gpd
 import json
 
-from utils import CSV_FOLDER_PATH, clean_dataset_name
+from utils import CSV_FOLDER_PATH, clean_dataset_name, calculate_view_state
 
 def load_gdf(gdf_path):
     """Loads a GeoDataFrame from a GeoJSON."""
@@ -39,6 +39,9 @@ def load_data():
     if idx is None:
         raise Exception("Failed to load GeoDataFrame")
     
+    # Calculate view state based on GeoJSON bounds
+    view_state = calculate_view_state(idx)
+    
     all_hexagons = idx.index.tolist()
     idx.index = idx.index.astype(str)
     
@@ -58,7 +61,7 @@ def load_data():
     idx_reset['hex9'] = idx_reset['hex9'].astype(str)
     idx_json = json.loads(idx_reset.to_json())
     
-    return idx, dataframes, clean_dataset_names, clean_names_map, idx_json
+    return idx, dataframes, clean_dataset_names, clean_names_map, idx_json, view_state
 
 # Load the data
-idx, dataframes, clean_dataset_names, clean_names_map, idx_json = load_data()
+idx, dataframes, clean_dataset_names, clean_names_map, idx_json, view_state = load_data()

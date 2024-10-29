@@ -7,8 +7,8 @@ import plotly.graph_objects as go
 from shapely.geometry import LineString
 
 from app import app
-from utils import COLORMAP, VIEW_STATE
-from data_loader import dataframes, clean_names_map, idx, idx_json
+from utils import COLORMAP
+from data_loader import dataframes, clean_names_map, idx, idx_json, view_state
 from analysis import fuzzify_each_layer, stack_fuzzified_layers, analyze_locations
 
 def get_farms_in_vicinity(hex_id, farm_data, distance_km):
@@ -136,12 +136,12 @@ def perform_analysis(n_clicks, selected_close, selected_far):
 )
 def update_visualization(analysis_results, distance_km, selected_location_number):
     if analysis_results is None:
-        # Return empty map with light theme
+        # Return empty map with light theme and dynamic view state
         fig = px.choropleth_mapbox(
             pd.DataFrame(),
             mapbox_style='carto-positron',
-            zoom=VIEW_STATE['zoom'],
-            center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']}
+            zoom=view_state['zoom'],
+            center={"lat": view_state['latitude'], "lon": view_state['longitude']}
         )
         fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
         return fig, None, None
@@ -159,7 +159,7 @@ def update_visualization(analysis_results, distance_km, selected_location_number
     top_10['lon'] = centroids.apply(lambda x: x.x)
     top_10['lat'] = centroids.apply(lambda x: x.y)
     
-    # Create base map with top 10 suitable locations
+    # Create base map with top 10 suitable locations and dynamic view state
     fig = px.choropleth_mapbox(
         top_10,
         geojson=idx_json,
@@ -167,14 +167,19 @@ def update_visualization(analysis_results, distance_km, selected_location_number
         color='fuzzy_sum',
         color_continuous_scale='viridis',
         opacity=0.7,
-        hover_name='location_number',
-        labels={'fuzzy_sum': 'Geschiktheid', 'location_number' : 'Locatie'},
         featureidkey='properties.hex9',
         mapbox_style='carto-positron',
-        zoom=VIEW_STATE['zoom'],
-        center={"lat": VIEW_STATE['latitude'], "lon": VIEW_STATE['longitude']}
+        zoom=view_state['zoom'],
+        center={"lat": view_state['latitude'], "lon": view_state['longitude']}
     )
 
+    # Update hover template
+    fig.update_traces(
+        hovertemplate="<b>Locatie %{customdata[0]}</b><br>" +
+                     "Geschiktheid: %{customdata[1]:.3f}<br>" +
+                     "<extra></extra>",
+        customdata=top_10[['location_number', 'fuzzy_sum']].values
+    )
 
     # Initialize farm info
     farm_info = None
@@ -203,6 +208,14 @@ def update_visualization(analysis_results, distance_km, selected_location_number
                 opacity=0.5,
                 color_discrete_sequence=['blue']
             )
+            
+            # Update hover template for farm hexagons
+            farm_layer.update_traces(
+                hovertemplate="<b>Boerderij</b><br>" +
+                             "Hex ID: %{location}<br>" +
+                             "<extra></extra>"
+            )
+            
             fig.add_traces(farm_layer.data)
 
         # Add connection lines
@@ -234,7 +247,7 @@ def update_visualization(analysis_results, distance_km, selected_location_number
         plot_bgcolor='white'
     )
 
-# Create interactive table with clickable rows
+    # Create interactive table with clickable rows
     table = html.Div([
         html.H4("Top 10 Meest Geschikte Locaties", className="mt-4 mb-3"),
         dash_table.DataTable(
@@ -262,7 +275,6 @@ def update_visualization(analysis_results, distance_km, selected_location_number
             } for i in range(len(top_10)) if (i + 1) == selected_location_number],
             row_selectable='single',
             selected_rows=[selected_location_number - 1] if selected_location_number else [],
-            # Format specific columns
             style_cell_conditional=[
                 {'if': {'column_id': 'location_number'},
                  'width': '100px'},
